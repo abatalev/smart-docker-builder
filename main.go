@@ -158,10 +158,49 @@ func findImage(stdout string, project string, hash string) bool {
 	return false
 }
 
-func x(facts map[string]string, name, hash string, args []string) map[string]string {
+func calcFact(facts map[string]string, name, hash string, args []string) map[string]string {
+	useEntryPoint := true
+	cmds, cmdOut := GetCmdChain(useEntryPoint, hash, args)
+	//cmd.Stderr = os.Stderr
+	for _, c := range cmds {
+		if err := c.Start(); err != nil {
+			fmt.Println(" ---> fact "+name+" skipped!", err)
+			return facts
+		}
+	}
+	res, _ := io.ReadAll(cmdOut)
+	for _, c := range cmds {
+		if err := c.Wait(); err != nil {
+			fmt.Println(" ---> fact "+name+" skipped!", err)
+			return facts
+		}
+	}
+	value := strings.TrimSpace(string(res))
+	fmt.Println(" ---> fact:", name, "=", value)
+	facts[name] = value
+	return facts
+}
+
+func quote(a string) string {
+	if strings.Index(a, " ") == -1 {
+		return a
+	}
+	return "\"" + a + "\""
+}
+func merge(a, b string) string {
+	return a + " " + quote(b)
+}
+
+func GetCmdChain(useEntryPoint bool, hash string, args []string) ([]*exec.Cmd, io.ReadCloser) {
 	cmdIdx := 0
 	cmds := make([]*exec.Cmd, 0)
-	v := []string{"docker", "run", hash}
+	var v []string
+	if useEntryPoint {
+		v = []string{"docker", "run", "--rm", "--entrypoint", "/bin/sh", hash, "-c"}
+	} else {
+		v = []string{"docker", "run", "--rm", hash}
+	}
+	lv := len(v)
 	var prvCmd *exec.Cmd = nil
 	var prvPipe string = ""
 	for _, arg := range args {
@@ -180,7 +219,16 @@ func x(facts map[string]string, name, hash string, args []string) map[string]str
 			cmdIdx = cmdIdx + 1
 			v = make([]string, 0)
 		} else {
-			v = append(v, arg)
+			if useEntryPoint && cmdIdx == 0 {
+				cnt := len(v)
+				if lv == cnt {
+					v = append(v, arg)
+				} else {
+					v[cnt-1] = merge(v[cnt-1], arg)
+				}
+			} else {
+				v = append(v, arg)
+			}
 		}
 	}
 	cmd := exec.Command(v[0], v[1:]...)
@@ -193,25 +241,14 @@ func x(facts map[string]string, name, hash string, args []string) map[string]str
 	}
 	cmds = append(cmds, cmd)
 	cmdOut, _ := cmd.StdoutPipe()
-	//cmd.Stderr = os.Stderr
-	for _, c := range cmds {
-		c.Start()
-	}
-	res, _ := io.ReadAll(cmdOut)
-	for _, c := range cmds {
-		c.Wait()
-	}
-	value := strings.TrimSpace(string(res))
-	fmt.Println(" ---> fact:", name, "=", value)
-	facts[name] = value
-	return facts
+	return cmds, cmdOut
 }
 
 func (cfg Config) GatheringFacts(hash string) map[string]string {
 	facts := make(map[string]string)
 
 	for _, def := range cfg.Facts {
-		facts = x(facts, def.Name, hash, def.Args)
+		facts = calcFact(facts, def.Name, hash, def.Args)
 	}
 
 	//x("apk", hash, []string{"which", "apk"})
