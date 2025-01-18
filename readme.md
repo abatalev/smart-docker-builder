@@ -2,7 +2,11 @@
 
 ## Intro
 
-TBD
+Build a Docker image using only the Dockerfile. 
+Tag calculation based on Dockerfile data.
+Build only after finding changes. 
+Gathering facts after assembly.
+Create and publish tags using the collected facts. 
 
 ## Build
 
