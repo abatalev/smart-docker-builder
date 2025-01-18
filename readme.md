@@ -2,6 +2,8 @@
 
 ## Intro
 
+TBD
+
 ## Build
 
 ```sh
@@ -19,3 +21,10 @@ sdb build/Dockerfile.example
 ```sh
 ./mk.sh
 ```
+
+# TO DO 
+
+- remove prefix. added imageName
+- added prefix like ghcr.io/
+- added push
+- facts ...

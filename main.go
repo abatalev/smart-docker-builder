@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type Def struct {
@@ -76,7 +76,13 @@ func BuildDockerImage(dockerFile string) int {
 	hashName := cfg.Prefix + "/" + imageName
 	hashTag := calcHash(dockerFile)
 	hash := hashName + ":" + hashTag
-	if !existsImage(hashName, hashTag) {
+	flag, err := existsImage(hashName, hashTag)
+	if err != nil {
+		fmt.Println(" -> aborted. error", err)
+		return 1
+	}
+
+	if !flag {
 		baseNameDockerFile := filepath.Base(dockerFile)
 		dirDockerFile := filepath.Dir(dockerFile)
 		fmt.Println(" --> build", hash)
@@ -105,7 +111,7 @@ func getImageName(dockerFile string) string {
 	// TODO bnd (project.go:CheckFile)
 	baseName := filepath.Base(dockerFile)
 	if baseName == "Dockerfile" {
-		return filepath.Dir(dockerFile)
+		return filepath.Base(filepath.Dir(dockerFile))
 	}
 	if strings.HasPrefix(baseName, "Dockerfile.") {
 		return strings.TrimPrefix(baseName, "Dockerfile.")
@@ -118,6 +124,7 @@ func getImageName(dockerFile string) string {
 }
 
 func calcHash(dockerFile string) string {
+	// TODO fix calcHash
 	hash := calcHashFile(dockerFile)
 	return hash[:8]
 }
@@ -135,13 +142,17 @@ func calcHashFile(path string) string {
 	return calcHashBytes(buf)
 }
 
-func existsImage(hashName, hashTag string) bool {
+func existsImage(hashName, hashTag string) (bool, error) {
 	cmd := exec.Command("docker", "image", "ls")
 	cmdOut, _ := cmd.StdoutPipe()
-	cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return false, err
+	}
 	res, _ := io.ReadAll(cmdOut)
-	cmd.Wait()
-	return findImage(string(res), hashName, hashTag)
+	if err := cmd.Wait(); err != nil {
+		return false, err
+	}
+	return findImage(string(res), hashName, hashTag), nil
 }
 
 func findImage(stdout string, project string, hash string) bool {
@@ -182,7 +193,7 @@ func calcFact(facts map[string]string, name, hash string, args []string) map[str
 }
 
 func quote(a string) string {
-	if strings.Index(a, " ") == -1 {
+	if !strings.Contains(a, " ") {
 		return a
 	}
 	return "\"" + a + "\""
@@ -312,7 +323,9 @@ func createTag(hashName, hashTag, mask string, facts map[string]string) {
 		}
 
 		fmt.Println(" ----> tag", x)
-		exec.Command("docker", "image", "tag", hashName+":"+hashTag, hashName+":"+x).Run()
+		if err := exec.Command("docker", "image", "tag", hashName+":"+hashTag, hashName+":"+x).Run(); err != nil {
+			fmt.Println(" ----> tag: warning! ", err)
+		}
 
 		flag := false
 		for i, token := range tokens {
