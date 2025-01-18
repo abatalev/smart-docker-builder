@@ -26,6 +26,12 @@ smart docker build
  ----> tag alpine-3
  ----> tag alpine-3.21
  ----> tag alpine-3.21.0
+
+ $ docker image list | grep example
+abatalev/example  47e00eaa       4048db5d3672  6 weeks ago  7.83MB
+abatalev/example  alpine-3       4048db5d3672  6 weeks ago  7.83MB
+abatalev/example  alpine-3.21    4048db5d3672  6 weeks ago  7.83MB
+abatalev/example  alpine-3.21.0  4048db5d3672  6 weeks ago  7.83MB
 ``` 
 
 ## Build
