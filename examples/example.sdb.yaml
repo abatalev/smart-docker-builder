@@ -1,0 +1,17 @@
+version: "0.0.1"
+prefix: "abatalev"
+facts:
+  - name: os-name
+    args: ["cat", "/etc/os-release", "|", "awk", "-F=", "/^ID=/{ print $2 }"]
+  - name: "os-version"
+    args:
+      [
+        "cat",
+        "/etc/os-release",
+        "|",
+        "awk",
+        "-F=",
+        "/^VERSION_ID=/{ print $2 }",
+      ]
+tags:
+  - "$os-name|-|@os-version"
