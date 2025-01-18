@@ -11,7 +11,10 @@
 ## Usage
 
 ```sh
-$./sdb examples/Dockerfile.example
+$ cat examples/Dockerfile.example 
+FROM alpine:latest
+
+$ ./sdb examples/Dockerfile.example
 smart docker build
  -> file examples/Dockerfile.example
  --> (abatalev/example:47e00eaa) image exists. build skipped
