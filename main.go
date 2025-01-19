@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha1"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -13,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/abatalev/smartdockerbuild/internal/docker"
+	"github.com/abatalev/smartdockerbuild/internal/hash"
 	"gopkg.in/yaml.v3"
 )
 
@@ -35,6 +35,7 @@ func main() {
 
 	isVersion := flag.Bool("version", false, "Show version of application")
 	isHelp := flag.Bool("help", false, "Show help")
+	isForce := flag.Bool("force", false, "Ignore cached images")
 	flag.Parse()
 
 	if *isVersion {
@@ -53,10 +54,10 @@ func main() {
 		return
 	}
 
-	os.Exit(BuildDockerImage(os.Args[1]))
+	os.Exit(BuildDockerImage(flag.Args()[0], *isForce))
 }
 
-func BuildDockerImage(dockerFile string) int {
+func BuildDockerImage(dockerFile string, isForce bool) int {
 	fmt.Println(" -> file", dockerFile)
 	dirName := filepath.Dir(dockerFile)
 	imageName := getImageName(dockerFile)
@@ -74,12 +75,15 @@ func BuildDockerImage(dockerFile string) int {
 	}
 
 	hashName := cfg.Prefix + "/" + imageName
-	hashTag := calcHash(dockerFile)
+	hashTag := calcHash(".", dockerFile) // TODO fix WorkDir
 	hash := hashName + ":" + hashTag
-	flag, err := existsImage(hashName, hashTag)
-	if err != nil {
-		fmt.Println(" -> aborted. error", err)
-		return 1
+	var flag bool = false
+	if !isForce {
+		flag, err = existsImage(hashName, hashTag)
+		if err != nil {
+			fmt.Println(" -> aborted. error", err)
+			return 1
+		}
 	}
 
 	if !flag {
@@ -123,23 +127,20 @@ func getImageName(dockerFile string) string {
 	panic("unknown pattern '" + dockerFile + "'") // TODO remove panic
 }
 
-func calcHash(dockerFile string) string {
-	// TODO fix calcHash
-	hash := calcHashFile(dockerFile)
+func calcHash(workDir, dockerFile string) string {
+	hash := hash.CalcHashFiles(hash.CalcHashes(workDir, GetFilesForDockerFile(workDir, dockerFile)))
 	return hash[:8]
 }
 
-func calcHashBytes(buf []byte) string {
-	// TODO bnd (hash.go)
-	h := sha1.New()
-	h.Write(buf)
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-func calcHashFile(path string) string {
-	// TODO bnd (hash.go)
-	buf, _ := os.ReadFile(path)
-	return calcHashBytes(buf)
+func GetFilesForDockerFile(workDir, dockerFile string) []string {
+	f, _ := os.Open(filepath.Join(workDir, dockerFile))
+	// if err != nil {
+	// 	return []string{}, []docker.ProjectDependency{}, err
+	// }
+	files := []string{dockerFile}
+	patterns, _ := docker.ParseDockerFile(f, workDir)
+	files = append(files, patterns...)
+	return hash.WalkDirWithPatterns(workDir, files)
 }
 
 func existsImage(hashName, hashTag string) (bool, error) {

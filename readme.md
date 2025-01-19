@@ -54,7 +54,8 @@ sdb build/Dockerfile.example
 
 # TO DO 
 
+- coverage: 80%
 - remove prefix. added imageName
 - added prefix like ghcr.io/
 - added push
-- facts ...
+- collect facts ...

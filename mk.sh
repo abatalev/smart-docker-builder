@@ -59,7 +59,7 @@ if [ "$?" != "0" ]; then
 fi
 
 echo "### total coverage"
-./build/gototcov -f coverage.out -limit 1
+./build/gototcov -f coverage.out -limit 60
 if [ "$?" != "0" ]; then
     echo "### open browser"
     go tool cover -html=coverage.out
@@ -68,7 +68,6 @@ if [ "$?" != "0" ]; then
 fi
 
 echo "### -[*]-[ Mutating tests ]------------"
-#cd $CDIR/internal
 ~/go/bin/gremlins unleash
 if [ "$?" != "0" ]; then
     echo "### aborted"
