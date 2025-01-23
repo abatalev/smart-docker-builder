@@ -2,7 +2,7 @@ version: "0.0.1"
 prefix: "abatalev"
 facts:
   - name: os-name
-    args: ["cat", "/etc/os-release", "|", "awk", "-F=", "/^ID=/{ print $2 }"]
+    cmd: os-name
   - name: "os-version"
     args:
       [
