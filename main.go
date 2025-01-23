@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/abatalev/smartdockerbuild/internal/docker"
-	"github.com/abatalev/smartdockerbuild/internal/hash"
+	"github.com/abatalev/smartdockerbuild/internal/logic"
+	"github.com/abatalev/smartdockerbuild/internal/osrunner"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,15 +30,23 @@ type Config struct {
 var gitHash = "development"
 var p2hHash = ""
 
+type Options struct {
+	isVersion      bool
+	isHelp         bool
+	isForce        bool
+	DockerfileName string
+}
+
 func main() {
 	fmt.Println("smart docker build")
+	args := os.Args[1:]
 
-	isVersion := flag.Bool("version", false, "Show version of application")
-	isHelp := flag.Bool("help", false, "Show help")
-	isForce := flag.Bool("force", false, "Ignore cached images")
-	flag.Parse()
+	options, err := parseOptions(args)
+	if err != nil {
+		panic(err)
+	}
 
-	if *isVersion {
+	if options.isVersion {
 		fmt.Println("Version:")
 		fmt.Println("     git", gitHash)
 		if p2hHash != "" {
@@ -47,213 +55,151 @@ func main() {
 		return
 	}
 
-	if *isHelp {
+	if options.isHelp {
 		fmt.Println()
 		flag.PrintDefaults()
 		fmt.Println()
 		return
 	}
 
-	os.Exit(BuildDockerImage(flag.Args()[0], *isForce))
+	os.Exit(BuildDockerImage(".", options.DockerfileName, options.isForce))
 }
 
-func BuildDockerImage(dockerFile string, isForce bool) int {
+func parseOptions(args []string) (Options, error) {
+	var options Options
+	flags := flag.NewFlagSet("1", flag.ExitOnError)
+	flags.BoolVar(&options.isVersion, "version", false, "Show version of application")
+	flags.BoolVar(&options.isHelp, "help", false, "Show help")
+	flags.BoolVar(&options.isForce, "force", false, "Ignore cached images")
+	err := flags.Parse(args)
+	if len(flags.Args()) > 0 {
+		options.DockerfileName = flags.Args()[0]
+	}
+	return options, err
+}
+
+func BuildDockerImage(workDir, dockerFile string, isForce bool) int {
 	fmt.Println(" -> file", dockerFile)
-	dirName := filepath.Dir(dockerFile)
-	imageName := getImageName(dockerFile)
-
-	// load Config
-	cfg := Config{}
-	yamlFile, err := os.ReadFile(filepath.Join(dirName, imageName+".sdb.yaml"))
+	fullDockerFile := filepath.Join(workDir, dockerFile)
+	// fmt.Println(" -> workdir", workDir)
+	// fmt.Println(" -> fullName", fullDockerFile)
+	_, err := os.Lstat(fullDockerFile)
 	if err != nil {
-		log.Printf("yamlFile.Get err   #%v ", err)
+		fmt.Println(" -> ", err)
+		return 1
+	}
+	dirName := filepath.Dir(fullDockerFile)
+	imageName := logic.GetImageName(fullDockerFile)
+
+	cfg, err := loadConfig(filepath.Join(dirName, imageName+".sdb.yaml"))
+	if err != nil {
+		return 1
 	}
 
-	err = yaml.Unmarshal(yamlFile, &cfg)
+	hashName := imageName
+	if cfg.Prefix != "" {
+		hashName = cfg.Prefix + "/" + hashName
+	}
+	hashTag := logic.CalcHash(workDir, dockerFile) // TODO fix WorkDir
+	isNeedBuild, err := checkOldBuild(isForce, hashName, hashTag)
 	if err != nil {
-		log.Fatalf("error: %v", err)
+		return 1
 	}
 
-	hashName := cfg.Prefix + "/" + imageName
-	hashTag := calcHash(".", dockerFile) // TODO fix WorkDir
 	hash := hashName + ":" + hashTag
-	var flag bool = false
-	if !isForce {
-		flag, err = existsImage(hashName, hashTag)
-		if err != nil {
-			fmt.Println(" -> aborted. error", err)
-			return 1
-		}
-	}
-
-	if !flag {
-		baseNameDockerFile := filepath.Base(dockerFile)
-		dirDockerFile := filepath.Dir(dockerFile)
-		fmt.Println(" --> build", hash)
-		cmd := exec.Command("docker", "build", "-t", hash, "-f", baseNameDockerFile, ".")
-		cmd.Dir = dirDockerFile
-		var stderr, stdout bytes.Buffer
-		cmd.Stderr = &stderr
-		cmd.Stdout = &stdout
-		if err := cmd.Run(); err != nil {
-			fmt.Println(" ---> stderr:", strings.TrimSpace(stderr.String()))
-			fmt.Println(" ---> stdout:", strings.TrimSpace(stdout.String()))
-			fmt.Println(" ---> error:", err)
-			fmt.Println(" ---> exit code:", cmd.ProcessState.ExitCode())
-			fmt.Println(" -> aborted!")
-			return cmd.ProcessState.ExitCode()
+	if isNeedBuild {
+		if exitCode := dockerBuild(workDir, dockerFile, hash); exitCode != 0 {
+			return exitCode
 		}
 	} else {
 		fmt.Println(" --> (" + hash + ") image exists. build skipped")
 	}
+
 	fmt.Println(" --> gathering facts")
 	facts := cfg.GatheringFacts(hash)
 	return cfg.DoRules(hashName, hashTag, facts)
 }
 
-func getImageName(dockerFile string) string {
-	// TODO bnd (project.go:CheckFile)
-	baseName := filepath.Base(dockerFile)
-	if baseName == "Dockerfile" {
-		return filepath.Base(filepath.Dir(dockerFile))
+func logStrings(name, content string) {
+	for n, s := range strings.Split(content, "\n") {
+		if n == 0 {
+			fmt.Println(" ---> "+name+":", s)
+		} else {
+			fmt.Println("          ->:", s)
+		}
 	}
-	if strings.HasPrefix(baseName, "Dockerfile.") {
-		return strings.TrimPrefix(baseName, "Dockerfile.")
-	}
-	if strings.HasSuffix(baseName, ".Dockerfile") {
-		return strings.TrimSuffix(baseName, ".Dockerfile")
-	}
-
-	panic("unknown pattern '" + dockerFile + "'") // TODO remove panic
 }
 
-func calcHash(workDir, dockerFile string) string {
-	hash := hash.CalcHashFiles(hash.CalcHashes(workDir, GetFilesForDockerFile(workDir, dockerFile)))
-	return hash[:8]
+func dockerBuild(workDir, dockerFile, hash string) int {
+	fmt.Println(" --> build", hash)
+	cmd := exec.Command("docker", "build", "-t", hash, "-f", dockerFile, ".")
+	cmd.Dir = workDir
+	var stderr, stdout bytes.Buffer
+	cmd.Stderr = &stderr
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		logStrings("stderr", strings.TrimSpace(stderr.String()))
+		logStrings("stdout", strings.TrimSpace(stdout.String()))
+		fmt.Println(" ---> error:", err)
+		fmt.Println(" ---> exit code:", cmd.ProcessState.ExitCode())
+		fmt.Println(" -> aborted!")
+		return cmd.ProcessState.ExitCode()
+	}
+	return 0
 }
 
-func GetFilesForDockerFile(workDir, dockerFile string) []string {
-	f, _ := os.Open(filepath.Join(workDir, dockerFile))
-	// if err != nil {
-	// 	return []string{}, []docker.ProjectDependency{}, err
-	// }
-	files := []string{dockerFile}
-	patterns, _ := docker.ParseDockerFile(f, workDir)
-	files = append(files, patterns...)
-	return hash.WalkDirWithPatterns(workDir, files)
+func checkOldBuild(isForce bool, hashName string, hashTag string) (bool, error) {
+	if isForce {
+		return true, nil
+	}
+
+	isNeedBuild, err := existsImage(hashName, hashTag)
+	if err != nil {
+		fmt.Println(" -> aborted. error", err)
+		return false, err
+	}
+
+	return isNeedBuild, nil
+}
+
+func loadConfig(configName string) (Config, error) {
+	cfg := Config{}
+	yamlFile, err := os.ReadFile(configName)
+	if err != nil {
+		log.Printf("yamlFile.Get err   #%v ", err)
+		return Config{}, err
+	}
+
+	err = yaml.Unmarshal(yamlFile, &cfg)
+	if err != nil {
+		log.Printf("error: %v", err)
+		return Config{}, err
+	}
+	return cfg, nil
 }
 
 func existsImage(hashName, hashTag string) (bool, error) {
-	cmd := exec.Command("docker", "image", "ls")
-	cmdOut, _ := cmd.StdoutPipe()
-	if err := cmd.Start(); err != nil {
+	cmd, cmdOut := DockerImageList()
+	res, err := osrunner.StartAndWait([]*exec.Cmd{cmd}, cmdOut)
+	if err != nil {
 		return false, err
 	}
-	res, _ := io.ReadAll(cmdOut)
-	if err := cmd.Wait(); err != nil {
-		return false, err
-	}
-	return findImage(string(res), hashName, hashTag), nil
+	return logic.FindImage(string(res), hashName, hashTag), nil
 }
 
-func findImage(stdout string, project string, hash string) bool {
-	// TODO bnd (dockerproject.go)
-	for _, s := range strings.Split(stdout, "\n") {
-		ss := strings.ReplaceAll(s, "\t", " ")
-		for strings.Contains(ss, "  ") {
-			ss = strings.ReplaceAll(ss, "  ", " ")
-		}
-		if strings.Contains(ss, project+" "+hash) {
-			return true
-		}
-	}
-	return false
-}
-
-func calcFact(facts map[string]string, name, hash string, args []string) map[string]string {
-	useEntryPoint := true
-	cmds, cmdOut := GetCmdChain(useEntryPoint, hash, args)
-	//cmd.Stderr = os.Stderr
-	for _, c := range cmds {
-		if err := c.Start(); err != nil {
-			fmt.Println(" ---> fact "+name+" skipped!", err)
-			return facts
-		}
-	}
-	res, _ := io.ReadAll(cmdOut)
-	for _, c := range cmds {
-		if err := c.Wait(); err != nil {
-			fmt.Println(" ---> fact "+name+" skipped!", err)
-			return facts
-		}
-	}
-	value := strings.TrimSpace(string(res))
-	fmt.Println(" ---> fact:", name, "=", value)
-	facts[name] = value
-	return facts
-}
-
-func quote(a string) string {
-	if !strings.Contains(a, " ") {
-		return a
-	}
-	return "\"" + a + "\""
-}
-func merge(a, b string) string {
-	return a + " " + quote(b)
-}
-
-func GetCmdChain(useEntryPoint bool, hash string, args []string) ([]*exec.Cmd, io.ReadCloser) {
-	cmdIdx := 0
-	cmds := make([]*exec.Cmd, 0)
-	var v []string
-	if useEntryPoint {
-		v = []string{"docker", "run", "--rm", "--entrypoint", "/bin/sh", hash, "-c"}
-	} else {
-		v = []string{"docker", "run", "--rm", hash}
-	}
-	lv := len(v)
-	var prvCmd *exec.Cmd = nil
-	var prvPipe string = ""
-	for _, arg := range args {
-		if arg == "|" || arg == "|&" {
-			curCmd := exec.Command(v[0], v[1:]...)
-			if prvCmd != nil {
-				if prvPipe == "|" {
-					curCmd.Stdin, _ = prvCmd.StdoutPipe()
-				} else {
-					curCmd.Stdin, _ = prvCmd.StderrPipe()
-				}
-			}
-			prvCmd = curCmd
-			prvPipe = arg
-			cmds = append(cmds, curCmd)
-			cmdIdx = cmdIdx + 1
-			v = make([]string, 0)
-		} else {
-			if useEntryPoint && cmdIdx == 0 {
-				cnt := len(v)
-				if lv == cnt {
-					v = append(v, arg)
-				} else {
-					v[cnt-1] = merge(v[cnt-1], arg)
-				}
-			} else {
-				v = append(v, arg)
-			}
-		}
-	}
-	cmd := exec.Command(v[0], v[1:]...)
-	if prvCmd != nil {
-		if prvPipe == "|" {
-			cmd.Stdin, _ = prvCmd.StdoutPipe()
-		} else {
-			cmd.Stdin, _ = prvCmd.StderrPipe()
-		}
-	}
-	cmds = append(cmds, cmd)
+func DockerImageList() (*exec.Cmd, io.ReadCloser) {
+	cmd := osrunner.Command("docker", "image", "ls")
 	cmdOut, _ := cmd.StdoutPipe()
-	return cmds, cmdOut
+	return cmd, cmdOut
+}
+
+func RunCmdChain(useEntryPoint bool, hash string, args []string) (string, error) {
+	cmds, cmdOut := logic.GetCmdChain(useEntryPoint, hash, args)
+	res, err := osrunner.StartAndWait(cmds, cmdOut)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(res)), nil
 }
 
 func (cfg Config) GatheringFacts(hash string) map[string]string {
@@ -270,79 +216,31 @@ func (cfg Config) GatheringFacts(hash string) map[string]string {
 	return facts
 }
 
+func calcFact(facts map[string]string, name, hash string, args []string) map[string]string {
+	value, err := RunCmdChain(true, hash, args)
+	if err != nil {
+		fmt.Println(" ---> fact "+name+" skipped!", err)
+		return facts
+	}
+	fmt.Println(" ---> fact:", name, "=", value)
+	facts[name] = value
+	return facts
+}
+
 func (cfg Config) DoRules(hashName, hashTag string, facts map[string]string) int {
 	fmt.Println(" --> create tags")
 	for _, mask := range cfg.Tags {
-		createTag(hashName, hashTag, mask, facts)
+		fmt.Println(" ---> mask", mask)
+		logic.TagsProcessing(mask, facts, func(tagName string) {
+			fmt.Println(" ----> tag", tagName)
+			if err := createDockerTag(hashName, hashTag, tagName).Run(); err != nil {
+				fmt.Println(" ----> tag: warning! ", err)
+			}
+		})
 	}
 	return 0
 }
 
-type Token struct {
-	Index int
-	Value []string
-}
-
-func SemanticVersion(v string) []string {
-	a := strings.Split(v, ".")
-	versions := make([]string, 0)
-	x := ""
-	for _, v := range a {
-		if x == "" {
-			x = v
-		} else {
-			x = x + "." + v
-		}
-		versions = append(versions, x)
-	}
-	return versions
-}
-
-func createTag(hashName, hashTag, mask string, facts map[string]string) {
-	tokens := make([]Token, 0)
-
-	tt := strings.Split(mask, "|")
-	for _, ttt := range tt {
-		if strings.HasPrefix(ttt, "@") {
-			k := strings.TrimPrefix(ttt, "@")
-			tokens = append(tokens, Token{Value: SemanticVersion(facts[k])})
-			continue
-		}
-		if strings.HasPrefix(ttt, "$") {
-			k := strings.TrimPrefix(ttt, "$")
-			tokens = append(tokens, Token{Value: []string{facts[k]}})
-			continue
-		}
-		tokens = append(tokens, Token{Value: []string{ttt}})
-	}
-
-	fmt.Println(" ---> mask", mask)
-	for {
-		x := ""
-		for _, token := range tokens {
-			x = x + token.Value[token.Index]
-		}
-
-		fmt.Println(" ----> tag", x)
-		if err := exec.Command("docker", "image", "tag", hashName+":"+hashTag, hashName+":"+x).Run(); err != nil {
-			fmt.Println(" ----> tag: warning! ", err)
-		}
-
-		flag := false
-		for i, token := range tokens {
-			if token.Index < len(token.Value)-1 {
-				for v := range tokens {
-					if v < i {
-						tokens[v].Index = 0
-					}
-				}
-				tokens[i].Index = tokens[i].Index + 1
-				flag = true
-				break
-			}
-		}
-		if !flag {
-			break
-		}
-	}
+func createDockerTag(hashName, hashTag, newTag string) *exec.Cmd {
+	return osrunner.Command("docker", "image", "tag", hashName+":"+hashTag, hashName+":"+newTag)
 }
