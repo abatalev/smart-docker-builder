@@ -1,0 +1,13 @@
+facts:
+  - name: os-name
+    args: ["cat /etc/os-release", "|", "awk", "-F=", "/^ID=/{ print $2 }"]
+  - name: "os-version"
+    args:
+      [
+        "cat",
+        "/etc/os-release",
+        "|",
+        "awk",
+        "-F=",
+        "/^VERSION_ID=/{ print $2 }",
+      ]

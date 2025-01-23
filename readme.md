@@ -58,5 +58,7 @@ sdb build/Dockerfile.example
 - remove prefix. added imageName
 - added prefix like ghcr.io/
 - added push
-- collect facts ...
-- use kaniko --- gcr.io/kaniko-project/executor:v1.23.2
+
+- use kaniko? (gcr.io/kaniko-project/executor:v1.23.2)
+    -- build and push to registry
+    -- q: tags?

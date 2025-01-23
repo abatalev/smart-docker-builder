@@ -1,0 +1,10 @@
+facts:
+  - name: "java-version"
+    args:
+      [
+        "java",
+        "-version",
+        "|&",
+        "awk",
+        '/Runtime/{ gsub(")","",$0);gsub("+","-",$0); gsub("-LTS","",$0); print substr($0,index($0,"(build")+6) }',
+      ]

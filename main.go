@@ -16,9 +16,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+//go:generate go-bindata -prefix "facts/" -pkg main -o bindata.go facts/...
+
 type Def struct {
+	Name    string   `yaml:"name"`
+	CmdName string   `yaml:"cmd"`
+	Args    []string `yaml:"args"`
+}
+
+type DefInternal struct {
 	Name string   `yaml:"name"`
 	Args []string `yaml:"args"`
+}
+
+type Defs struct {
+	Facts []DefInternal `yaml:"facts"`
 }
 
 type Config struct {
@@ -202,17 +214,41 @@ func RunCmdChain(useEntryPoint bool, hash string, args []string) (string, error)
 	return strings.TrimSpace(string(res)), nil
 }
 
-func (cfg Config) GatheringFacts(hash string) map[string]string {
-	facts := make(map[string]string)
-
-	for _, def := range cfg.Facts {
-		facts = calcFact(facts, def.Name, hash, def.Args)
+func loadFactsYaml(yamlFile []byte) []DefInternal {
+	defs := Defs{}
+	err := yaml.Unmarshal(yamlFile, &defs)
+	if err != nil {
+		log.Printf("error: %v", err)
+		return []DefInternal{}
 	}
+	return defs.Facts
+}
 
-	//x("apk", hash, []string{"which", "apk"})
-	//x("apk-list", hash, []string{"apk", "list", "-I"})
-	//x("java-version", hash, []string{ pandoc --version | awk '{ print $2 }'})
-	//x("java-version", hash, []string{apk info texlive | awk '/description:/{ print $1 }'})
+func loadAllFacts() map[string][]string {
+	globalFacts := make(map[string][]string, 0)
+	fmt.Println(" ---> assets")
+	for _, asset := range AssetNames() {
+		fmt.Println(" ----> asset", asset)
+		data, _ := Asset(asset)
+		facts := loadFactsYaml(data)
+		for _, fact := range facts {
+			globalFacts[fact.Name] = fact.Args
+		}
+	}
+	return globalFacts
+}
+
+func (cfg Config) GatheringFacts(hash string) map[string]string {
+	globalFacts := loadAllFacts()
+
+	facts := make(map[string]string)
+	for _, def := range cfg.Facts {
+		if def.CmdName != "" {
+			facts = calcFact(facts, def.Name, hash, globalFacts[def.CmdName])
+		} else {
+			facts = calcFact(facts, def.Name, hash, def.Args)
+		}
+	}
 	return facts
 }
 

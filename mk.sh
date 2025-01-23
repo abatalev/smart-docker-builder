@@ -6,6 +6,11 @@ if [ ! -d build ]; then
     mkdir build
 fi
 
+GO_BINDATA=$(which go-bindata) 
+if [ "x$GO_BINDATA" == "x" ]; then
+    go install github.com/go-bindata/go-bindata/go-bindata@latest
+fi
+
 if [ ! -f build/prj2hash ]; then
     cd build
     # git clone https://github.com/abatalev/prj2hash prj2hash.git
@@ -42,6 +47,9 @@ fi
 cd $CDIR
 echo "### -[*]-[ Mod ]------------"
 go mod tidy
+
+echo "### -[*]-[ Generate ]--------"
+go generate
 
 cd ${CDIR}
 echo "### -[*]-[ Lint ]------------"

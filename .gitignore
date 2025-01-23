@@ -1,4 +1,5 @@
 build/
 sdb
 coverage.out
+bindata.go
 

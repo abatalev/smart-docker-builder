@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,7 +18,7 @@ type FileContent struct {
 func createFilesContent(dirName string, contents []FileContent) error {
 	for _, content := range contents {
 		fileName := filepath.Join(dirName, content.name)
-		fmt.Println("writeFile>", fileName)
+		// fmt.Println("writeFile>", fileName)
 		if err := os.WriteFile(fileName, []byte(content.content), 0644); err != nil {
 			return err
 		}
@@ -30,6 +29,11 @@ func createFilesContent(dirName string, contents []FileContent) error {
 func createFileContent(dirName string, content FileContent) error {
 	fileName := filepath.Join(dirName, content.name)
 	return os.WriteFile(fileName, []byte(content.content), 0644)
+}
+
+func TestLoadDefs(t *testing.T) {
+	assertions := require.New(t)
+	assertions.Len(loadAllFacts(), 3)
 }
 
 func TestBuildDockerImage(t *testing.T) {
@@ -172,4 +176,24 @@ func TestCheckOldImage(t *testing.T) {
 		assertions.NoError(err, n)
 		assertions.Equal(variant.isNeed, isNeed, n)
 	}
+}
+
+func TestAssetDir(t *testing.T) {
+	variants := []struct {
+		name string
+		err  bool
+	}{
+		{name: "", err: false},
+		{name: "a", err: true},
+	}
+	assertions := require.New(t)
+	for n, variant := range variants {
+		_, err := AssetDir(variant.name)
+		assertions.Equal(variant.err, err != nil, n)
+	}
+}
+
+func TestRestoreAssets(t *testing.T) {
+	assertions := require.New(t)
+	assertions.NoError(RestoreAssets(t.TempDir(), ""))
 }
