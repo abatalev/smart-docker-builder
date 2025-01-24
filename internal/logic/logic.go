@@ -31,14 +31,17 @@ type Token struct {
 	Value []string
 }
 
-func TagsProcessing(mask string, facts map[string]string, doTag func(tag string)) {
+func TagsProcessing(mask string, facts map[string]string, doTag func(tag string) error) error {
 	tokens := ParseMask(mask, facts)
 	for {
-		doTag(GetTag(tokens))
+		if err := doTag(GetTag(tokens)); err != nil {
+			return err
+		}
 		if !NextTag(tokens) {
 			break
 		}
 	}
+	return nil
 }
 
 func ParseMask(mask string, facts map[string]string) []Token {

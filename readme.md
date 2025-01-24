@@ -55,9 +55,6 @@ sdb build/Dockerfile.example
 # TO DO 
 
 - coverage: 90%
-- remove prefix. added imageName
-- added prefix like ghcr.io/
-- added push
 
 - use kaniko? (gcr.io/kaniko-project/executor:v1.23.2)
     -- build and push to registry

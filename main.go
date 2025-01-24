@@ -34,9 +34,10 @@ type Defs struct {
 }
 
 type Config struct {
-	Prefix string   `yaml:"prefix"`
-	Facts  []Def    `yaml:"facts"`
-	Tags   []string `yaml:"tags"`
+	Name     string   `yaml:"name"`
+	Prefixes []string `yaml:"prefixes"`
+	Facts    []Def    `yaml:"facts"`
+	Tags     []string `yaml:"tags"`
 }
 
 var gitHash = "development"
@@ -46,6 +47,7 @@ type Options struct {
 	isVersion      bool
 	isHelp         bool
 	isForce        bool
+	isPush         bool
 	DockerfileName string
 }
 
@@ -74,7 +76,7 @@ func main() {
 		return
 	}
 
-	os.Exit(BuildDockerImage(".", options.DockerfileName, options.isForce))
+	os.Exit(BuildDockerImage(".", options.DockerfileName, options.isForce, options.isPush))
 }
 
 func parseOptions(args []string) (Options, error) {
@@ -83,6 +85,7 @@ func parseOptions(args []string) (Options, error) {
 	flags.BoolVar(&options.isVersion, "version", false, "Show version of application")
 	flags.BoolVar(&options.isHelp, "help", false, "Show help")
 	flags.BoolVar(&options.isForce, "force", false, "Ignore cached images")
+	flags.BoolVar(&options.isPush, "push", false, "Push images")
 	err := flags.Parse(args)
 	if len(flags.Args()) > 0 {
 		options.DockerfileName = flags.Args()[0]
@@ -90,7 +93,7 @@ func parseOptions(args []string) (Options, error) {
 	return options, err
 }
 
-func BuildDockerImage(workDir, dockerFile string, isForce bool) int {
+func BuildDockerImage(workDir, dockerFile string, isForce, isPush bool) int {
 	fmt.Println(" -> file", dockerFile)
 	fullDockerFile := filepath.Join(workDir, dockerFile)
 	// fmt.Println(" -> workdir", workDir)
@@ -109,8 +112,8 @@ func BuildDockerImage(workDir, dockerFile string, isForce bool) int {
 	}
 
 	hashName := imageName
-	if cfg.Prefix != "" {
-		hashName = cfg.Prefix + "/" + hashName
+	if cfg.Name != "" {
+		hashName = cfg.Name
 	}
 	hashTag := logic.CalcHash(workDir, dockerFile) // TODO fix WorkDir
 	isNeedBuild, err := checkOldBuild(isForce, hashName, hashTag)
@@ -129,7 +132,7 @@ func BuildDockerImage(workDir, dockerFile string, isForce bool) int {
 
 	fmt.Println(" --> gathering facts")
 	facts := cfg.GatheringFacts(hash)
-	return cfg.DoRules(hashName, hashTag, facts)
+	return cfg.DoRules(hashName, hashTag, facts, isPush, cfg.Prefixes)
 }
 
 func logStrings(name, content string) {
@@ -165,13 +168,13 @@ func checkOldBuild(isForce bool, hashName string, hashTag string) (bool, error) 
 		return true, nil
 	}
 
-	isNeedBuild, err := existsImage(hashName, hashTag)
+	existImage, err := existsImage(hashName, hashTag)
 	if err != nil {
 		fmt.Println(" -> aborted. error", err)
 		return false, err
 	}
 
-	return isNeedBuild, nil
+	return !existImage, nil
 }
 
 func loadConfig(configName string) (Config, error) {
@@ -200,7 +203,7 @@ func existsImage(hashName, hashTag string) (bool, error) {
 }
 
 func DockerImageList() (*exec.Cmd, io.ReadCloser) {
-	cmd := osrunner.Command("docker", "image", "ls")
+	cmd := osrunner.Command("docker", "image", "list")
 	cmdOut, _ := cmd.StdoutPipe()
 	return cmd, cmdOut
 }
@@ -263,20 +266,44 @@ func calcFact(facts map[string]string, name, hash string, args []string) map[str
 	return facts
 }
 
-func (cfg Config) DoRules(hashName, hashTag string, facts map[string]string) int {
+func (cfg Config) DoRules(hashName, hashTag string,
+	facts map[string]string, isPush bool, prefixes []string) int {
 	fmt.Println(" --> create tags")
 	for _, mask := range cfg.Tags {
 		fmt.Println(" ---> mask", mask)
-		logic.TagsProcessing(mask, facts, func(tagName string) {
+		if err := logic.TagsProcessing(mask, facts, func(tagName string) error {
 			fmt.Println(" ----> tag", tagName)
-			if err := createDockerTag(hashName, hashTag, tagName).Run(); err != nil {
+			if err := createDockerTag(hashName+":"+hashTag, hashName+":"+tagName).Run(); err != nil {
 				fmt.Println(" ----> tag: warning! ", err)
 			}
-		})
+			for _, prefix := range prefixes {
+				hashNameWithPrefix := prefix + "/" + hashName
+				if strings.HasSuffix(prefix, "/") {
+					hashNameWithPrefix = prefix + hashName
+				}
+				if err := createDockerTag(hashName+":"+hashTag, hashNameWithPrefix+":"+tagName).Run(); err != nil {
+					fmt.Println(" ----> tag: warning! ", err)
+				}
+				if isPush {
+					if err := pushDockerImage(hashNameWithPrefix, tagName).Run(); err != nil {
+						fmt.Println(" ----> push:  ", err)
+						return err
+					}
+				}
+			}
+			return nil
+		}); err != nil {
+			fmt.Println(" --> aborted")
+			return 1
+		}
 	}
 	return 0
 }
 
-func createDockerTag(hashName, hashTag, newTag string) *exec.Cmd {
-	return osrunner.Command("docker", "image", "tag", hashName+":"+hashTag, hashName+":"+newTag)
+func pushDockerImage(imageName, imageTag string) *exec.Cmd {
+	return osrunner.Command("docker", "image", imageName+":"+imageTag)
+}
+
+func createDockerTag(imageName1, imageName2 string) *exec.Cmd {
+	return osrunner.Command("docker", "image", "tag", imageName1, imageName2)
 }

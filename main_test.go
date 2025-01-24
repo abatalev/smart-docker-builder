@@ -67,7 +67,7 @@ func TestBuildDockerImage(t *testing.T) {
 		workDir := filepath.Join(t.TempDir(), "v"+strconv.Itoa(n))
 		assertions.NoError(os.Mkdir(workDir, 0755))
 		assertions.NoError(createFilesContent(workDir, variant.files))
-		assertions.Equal(variant.result, BuildDockerImage(workDir, variant.dockerFile, variant.force), n)
+		assertions.Equal(variant.result, BuildDockerImage(workDir, variant.dockerFile, variant.force, false), n)
 	}
 }
 
@@ -103,13 +103,13 @@ func TestParseOptions(t *testing.T) {
 
 func TestCreateDockerTag(t *testing.T) {
 	assertions := require.New(t)
-	assertions.Equal("docker image tag a:b a:c", strings.Join(createDockerTag("a", "b", "c").Args, " "))
+	assertions.Equal("docker image tag a:b a:c", strings.Join(createDockerTag("a:b", "a:c").Args, " "))
 }
 
 func TestDockerImageList(t *testing.T) {
 	assertions := require.New(t)
 	cmd, _ := DockerImageList()
-	assertions.Equal("docker image ls", strings.Join(cmd.Args, " "))
+	assertions.Equal("docker image list", strings.Join(cmd.Args, " "))
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -169,6 +169,7 @@ func TestCheckOldImage(t *testing.T) {
 		isNeed  bool
 	}{
 		{isForce: true, isNeed: true},
+		{isForce: false, isNeed: true},
 	}
 	assertions := require.New(t)
 	for n, variant := range variants {

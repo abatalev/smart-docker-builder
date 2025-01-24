@@ -52,9 +52,11 @@ func TestTags(t *testing.T) {
 	}
 	for n, variant := range variants {
 		tags := make([]string, 0)
-		TagsProcessing(variant.mask, facts, func(tagName string) {
-			tags = append(tags, tagName)
-		})
+		assertions.NoError(TagsProcessing(variant.mask, facts,
+			func(tagName string) error {
+				tags = append(tags, tagName)
+				return nil
+			}))
 		assertions.ElementsMatch(variant.resultTags, tags, n)
 	}
 }
