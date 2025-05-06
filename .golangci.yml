@@ -1,0 +1,41 @@
+version: "2"
+linters:
+  default: all
+  disable:
+    - wsl
+    - wrapcheck
+    - varnamelen
+    - testpackage
+    - paralleltest
+    - nlreturn
+
+    - staticcheck
+    - revive
+    - mnd
+    - gosec
+    - nestif
+    - godox
+    - gochecknoglobals
+    - funlen
+    - errcheck
+    - cyclop
+    - exhaustruct
+    - forbidigo
+    - godot
+
+  exclusions:
+    paths:
+      - bindata.go
+  settings:
+    depguard:
+      rules:
+        prevent_unmaintained_packages:
+          list-mode: lax # allow unless explicitely denied
+          files:
+            - $all
+            - "!$test"
+          allow:
+            - $gostd
+          deny:
+            - pkg: io/ioutil
+              desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
