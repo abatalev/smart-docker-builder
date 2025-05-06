@@ -71,7 +71,7 @@ func NextTag(tokens []Token) bool {
 					tokens[v].Index = 0
 				}
 			}
-			tokens[i].Index = tokens[i].Index + 1
+			tokens[i].Index += 1
 			flag = true
 			break
 		}
@@ -82,7 +82,7 @@ func NextTag(tokens []Token) bool {
 func GetTag(tokens []Token) string {
 	x := ""
 	for _, token := range tokens {
-		x = x + token.Value[token.Index]
+		x += token.Value[token.Index]
 	}
 	return x
 }
@@ -122,7 +122,7 @@ func GetCmdChain(useEntryPoint bool, hash string, args []string) ([]*exec.Cmd, i
 			prvCmd = curCmd
 			prvPipe = arg
 			cmds = append(cmds, curCmd)
-			cmdIdx = cmdIdx + 1
+			cmdIdx += 1
 			v = make([]string, 0)
 		} else {
 			if useEntryPoint && cmdIdx == 0 {

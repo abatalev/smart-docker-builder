@@ -9,7 +9,7 @@ import (
 func TestParseFrom(t *testing.T) {
 	assertions := require.New(t)
 	assertions.Len(parseFrom("from a", []ProjectDependency{}), 1)
-	assertions.Len(parseFrom("copy a b", []ProjectDependency{}), 0)
+	assertions.Empty(parseFrom("copy a b", []ProjectDependency{}))
 }
 
 func TestParseCopy(t *testing.T) {
@@ -47,7 +47,7 @@ func TestParseCopy(t *testing.T) {
 			assertions.Len(list, 1)
 			assertions.Equal(variant.result, list[0])
 		} else {
-			assertions.Len(list, 0)
+			assertions.Empty(list)
 		}
 	}
 }

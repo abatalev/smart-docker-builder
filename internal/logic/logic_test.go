@@ -91,7 +91,6 @@ func TestMerge(t *testing.T) {
 }
 
 func TestGetCmdChain(t *testing.T) {
-
 	variants := []struct {
 		args   []string
 		result []string
@@ -117,7 +116,6 @@ func TestGetCmdChain(t *testing.T) {
 			cmdargs = append(cmdargs, strings.Join(cmd.Args, " "))
 		}
 		assertions.ElementsMatch(variant.result, cmdargs, n)
-
 	}
 }
 
@@ -251,10 +249,10 @@ func TestCalcHash(t *testing.T) {
 	assertions := require.New(t)
 	for n, variant := range variants {
 		dirName := filepath.Join(t.TempDir(), "v"+strconv.Itoa(n))
-		assertions.NoError(os.Mkdir(dirName, 0755))
+		assertions.NoError(os.Mkdir(dirName, 0750))
 		for _, f := range variant.files {
 			fileName := filepath.Join(dirName, f.FileName)
-			assertions.NoError(os.WriteFile(fileName, []byte(f.Content), 0644))
+			assertions.NoError(os.WriteFile(fileName, []byte(f.Content), 0600))
 		}
 		files := GetFilesForDockerFile(dirName, variant.dockerFile)
 		assertions.ElementsMatch(variant.resultFiles, files, n)

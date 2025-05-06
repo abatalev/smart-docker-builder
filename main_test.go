@@ -156,7 +156,7 @@ func TestLoadConfig(t *testing.T) {
 		fileName := filepath.Join(dirName, variant.content.name)
 		_, err := loadConfig(fileName)
 		if variant.isError {
-			assertions.NotNil(err)
+			assertions.Error(err)
 		} else {
 			assertions.NoError(err)
 		}

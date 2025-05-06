@@ -65,7 +65,7 @@ func parseCopy(s string, list []string) []string {
 
 	path = strings.TrimPrefix(path, "./")
 	if strings.HasSuffix(path, "/") {
-		path = path + "**/*"
+		path += "**/*"
 	}
 	return append(list, path)
 }

@@ -18,11 +18,11 @@ func WalkDirWithPatterns(workDir string, patters []string) []string {
 	}
 
 	if !strings.HasSuffix(workDir, "/") {
-		workDir = workDir + "/"
+		workDir += "/"
 	}
 	files := make([]string, 0)
 	err := filepath.Walk(workDir, func(path string, info fs.FileInfo, err error) error {
-		//log.Println("@@@@", path, workDir)
+		// log.Println("@@@@", path, workDir)
 		filename := strings.TrimPrefix(path, workDir)
 		if info.IsDir() {
 			return nil
@@ -33,7 +33,7 @@ func WalkDirWithPatterns(workDir string, patters []string) []string {
 		return nil
 	})
 	if err != nil {
-		//panic("!!!") // TODO remove panic
+		// panic("!!!") // TODO remove panic
 		log.Println("ERROR", err)
 		return []string{}
 	}
