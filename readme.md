@@ -54,6 +54,8 @@ sdb build/Dockerfile.example
 
 # TO DO 
 
+- fix golangci-lint
+- enable linters 
 - coverage: 90%
 
 - use kaniko? (gcr.io/kaniko-project/executor:v1.23.2)
